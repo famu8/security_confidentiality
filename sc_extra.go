@@ -1,23 +1,27 @@
 /*
 Práctica SC 22/23
 
-Funcionalidad a implementar
+# Funcionalidad a implementar
 
 Estudiante: FERNANDO AUGUSTO MARINA URRIOLA
+//
 */
 package main
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
-	//"github.com/zserge/lorca" //Para usar IU. Primero descargar lorca con: go get github.com/zserge/lorca
 )
 
 /************************
@@ -30,6 +34,7 @@ CONFIGURACION PRÁCTICA
 // 2: Interfaz gráfica
 func tipoUI() int {
 	return 0
+	//aqui hacer un swicth para implementar el tipo de operacion que el usuario quisiera realizar
 }
 
 /**********************
@@ -42,17 +47,59 @@ FUNCIONES A IMPLEMENTAR
 
 // Guarda la base de datos en un fichero de disco
 func (dSrv *db) guardar(nomFich string, clave []byte) {
-	b, err := json.Marshal(dSrv) // serializar a JSON
+	// https://pkg.go.dev/crypto/cipher#Stream.XORKeyStream 
+	//serializar a JSON
+	b, err := json.Marshal(dSrv)
 	chk(err)
-	err = ioutil.WriteFile(nomFich, b, 0777) // escribir en fichero
+	//creo el bloque de cifrado y le paso la clave
+	block, err := aes.NewCipher(clave)
+	chk(err)
+	//creo el array de destino, donde va el texto cifrado
+	// si no le sumo el len de b me da error: "output smaller than input"
+	ciphertext := make([]byte, aes.BlockSize+len(b))
+	//obtenemos el primer bloque
+	//se crea el vector de inicializacion (iv) para aumentar la seguridad 
+	//el iv siempre sera del tamaño del bloque
+	iv := ciphertext[:aes.BlockSize]
+	_, err = io.ReadFull(rand.Reader, iv)
+	chk(err)
+	//creo el encirptador que usa el bloque y el iv
+	stream := cipher.NewCFBEncrypter(block, iv)
+	//cifrar el texto menos el primer bloque porque este corresponde al iv
+	// XORKey.. va byte por byte haciendo una operacion XOR con el slice y
+	// los bytes de cifrado de la clave
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], b)
 	chk(err)
 }
 
 // Carga la base de datos de un fichero de disco
 func (dSrv *db) cargar(nomFich string, clave []byte) {
-	b, err := ioutil.ReadFile(nomFich) // leer fichero
+	ciphertext, err := ioutil.ReadFile(nomFich) // Leer el archivo cifrado
 	chk(err)
-	err = json.Unmarshal(b, dSrv) // deserializar de JSON obteniendo la BD en memoria
+	//crear un nuevo cipher.Block con la clave
+	block, err := aes.NewCipher(clave)
+	chk(err)
+	// si el len del texto cifrado es menor que el tamaño de bloque abortamos
+	if len(ciphertext) < aes.BlockSize {
+		log.Fatal("error")
+	}
+	 //se obtiene el iv que son los 16 primeros bytes == tamanyo del bloque
+	iv := ciphertext[:aes.BlockSize]
+	 //eliminamos el IV del texto cifrado ya que lo hemos guardado anteriormente
+	ciphertext = ciphertext[aes.BlockSize:]
+	//hacemos uso del CFBDecrypter para desencriptar con el codigo y el iv
+	stream := cipher.NewCFBDecrypter(block, iv)
+	//descifrar los datos del archivo (excepto el primer bloque)
+	// esta funcion hace XOR byte por byte
+	// la documentacion dice que la funcion XORKey.. puede trabajar con dos 
+	//parametros si se llaman del mismo modo (ciphertext)
+	//"XORKeyStream can work in-place if the two arguments are the same."
+	stream.XORKeyStream(ciphertext, ciphertext)
+	//en este momento tengo el texto descifrado, falta desparsearlo
+	//se crea un objeto de tipo db
+	var dbObj db
+	//desparsear el json
+	err = json.Unmarshal(ciphertext, &dbObj)
 	chk(err)
 }
 
@@ -146,9 +193,11 @@ func (dCli *dataCliente) TokenActual() string {
 	return dCli.tokenActual
 }
 
-/**********
+/*
+*********
 INTERFACES
-***********/
+**********
+*/
 func cmdLogin(cli *http.Client, usr string, pass string) string {
 	data := url.Values{}
 	//autenticamos todas las peticiones
@@ -168,7 +217,7 @@ func cmdLogin(cli *http.Client, usr string, pass string) string {
 	return retorno
 }
 
-//Función que desarrolla la interfaz por linea de comandos en caso de ser este el modo de implemantación
+// Función que desarrolla la interfaz por linea de comandos en caso de ser este el modo de implemantación
 func cmdIniIUI(cli *http.Client) {
 	fmt.Println("¡Bienvenido a mi programa!")
 
@@ -259,8 +308,8 @@ func accionMenuSecundario() int {
 	return opcion
 }
 
-//Función que desarrolla la interfaz gráfica en caso de ser este el modo de implemantación
-//Recuerda descargar el módulo de go con:
+// Función que desarrolla la interfaz gráfica en caso de ser este el modo de implemantación
+// Recuerda descargar el módulo de go con:
 // go get github.com/zserge/lorca
 func cmdIniGUI(cli *http.Client) {
 	/*
@@ -350,7 +399,7 @@ type auth struct {
 	Contraseña string // contraseña (en claro, se debe modificar...)
 }
 
-//Estos son los datos que almacena el cliente en memoría para trabajar
+// Estos son los datos que almacena el cliente en memoría para trabajar
 type dataCliente struct {
 	usrActual   string // nombre de usuario introducido por el usuario
 	passActual  string // contraseña introducida por el usuario
