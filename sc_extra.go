@@ -28,6 +28,8 @@ import (
 CONFIGURACION PRÁCTICA
 *************************/
 
+// esot es un comentario de prueba
+
 // Indica el tipo de interfaz que usará la aplicación:
 // 0: solo test
 // 1: Linea de comandos
