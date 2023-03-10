@@ -28,8 +28,6 @@ import (
 CONFIGURACION PRÁCTICA
 *************************/
 
-// esot es un comentario de prueba
-
 // Indica el tipo de interfaz que usará la aplicación:
 // 0: solo test
 // 1: Linea de comandos
@@ -85,7 +83,7 @@ func (dSrv *db) cargar(nomFich string, clave []byte) {
 	if len(ciphertext) < aes.BlockSize {
 		log.Fatal("error")
 	}
-	 //se obtiene el iv que son los 16 primeros bytes == tamanyo del bloque
+	//se obtiene el iv que son los 16 primeros bytes == tamanyo del bloque
 	iv := ciphertext[:aes.BlockSize]
 	 //eliminamos el IV del texto cifrado ya que lo hemos guardado anteriormente
 	ciphertext = ciphertext[aes.BlockSize:]
