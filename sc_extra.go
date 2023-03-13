@@ -4,7 +4,6 @@ Práctica SC 22/23
 # Funcionalidad a implementar
 
 Estudiante: FERNANDO AUGUSTO MARINA URRIOLA
-//
 */
 package main
 
@@ -22,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"golang.org/x/crypto/scrypt"
 )
 
 /************************
@@ -106,20 +106,70 @@ func (dSrv *db) cargar(nomFich string, clave []byte) {
 // Realiza el registro de usuario
 func (dSrv *db) registrarUsuario(login, contr string) bool {
 	u, ok := dSrv.Creds[login] // comprobar si existe el usuario
-
-	if ok { //existe y es distinto
-		if strings.Compare(contr, u.Contraseña) != 0 { // comparar contraseña
+	if ok { //Si existe, login
+		//https://pkg.go.dev/golang.org/x/crypto/scrypt#Key
+		//ver parametros de la funcion key
+		//generamos la contraseña del usuario pero con su Sal que tenemos almacenado
+		has, e := scrypt.Key([]byte(contr), []byte(u.Sal), 32768, 8, 1, 32) 
+		chk(e)
+		/*
+		Compare returns an integer comparing two strings lexicographically. 
+		The result will be 0 if a == b, -1 if a < b, and +1 if a > b.
+		*/
+		if strings.Compare(string(has), u.Contraseña) != 0 { // Comparar contraseña.
+			//si distinto de 0 devolvemos false entonces la contraseña introducida
+			//no coincide con la guardada hasheada en la bbdd
 			return false
 		}
-	} else { //no existe, registro
-		dSrv.Creds[login] = auth{login, contr} // añadir a la BD
+	} else { //Si no existe, registro
+		sal := make([]byte, 32) //generamos un array de bytes de tamaño 32
+		_, e := rand.Read(sal)  //generar sal aleatorio
+		chk(e)
+		//contraseña hasheada con el sal
+		has, e := scrypt.Key([]byte(contr), sal, 32768, 8, 1, 32)
+		chk(e)
+		//guardamos en la db login, contra y sal
+		dSrv.Creds[login] = auth{login, string(has), string(sal)} // Añade a la BD.
 	}
 	return true
 }
 
 // Autenticación según la sección del API a la que se quiere acceder
 func (dSrv *db) puedeAcceder(login, contr string, token string, comando string) bool {
-	accesoOk := true
+	// se inicializan las variables en false
+	autenticacionOK := false
+	accesoOk := false
+	administrador := false
+	u, ok := dSrv.Creds[login]// verifica si hay un login y se guarda en la u
+	hash, _ := scrypt.Key([]byte(contr),[]byte(u.Sal), 32768, 8, 1, 32) // se hashea de nuevo la contraseña con la sal que se ha creado antes
+	// los valores que aparecen en esta operacion son la sal, una cuenta de interaccuones, el tamaño bloque, el factor de paralelismo y la longitud de la clave derivada
+
+	if ok {
+		if !bytes.Equal(u.Hash, hash) { // se compara si el u.hash generado anteriormente y el que se ha generado ahora son iguales
+			//si son iguales la autenticación es igual a true
+			autenticacionOK = true
+		}
+	}
+	if login == dSrv.UserAdmin() { // si este login es igual que el de la base de datos, el admin es igual a true
+		administrador = true
+	}
+	switch comando {
+	case "BD_INI":
+		_, existeAdmin := dSrv.Creds[dSrv.UserAdmin()] // verifica si hay un admin, es bool
+		if administrador && !existeAdmin {             // si hay un administrador y no existe admin, continua
+			if contr == dSrv.ClaveAdminInicial() {
+				accesoOk = true // si la contraseña introducida es igual que la contraseña del administrador, puede acceder
+			}
+		} else {
+			accesoOk = false
+		}
+	case "SALIR":
+		accesoOk = autenticacionOK && administrador
+	case "DOC_REG":
+		accesoOk = autenticacionOK && administrador
+	default:
+		accesoOk = autenticacionOK
+	}
 
 	return accesoOk
 }
@@ -397,6 +447,7 @@ type historial struct {
 type auth struct {
 	Login      string // nombre de entrada e identificador primario de credenciales
 	Contraseña string // contraseña (en claro, se debe modificar...)
+	Sal		   string // sal para anyadir a la contrasenya
 }
 
 // Estos son los datos que almacena el cliente en memoría para trabajar
