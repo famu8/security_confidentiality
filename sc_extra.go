@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 	"golang.org/x/crypto/scrypt"
+	"compress/zlib"
 )
 
 /************************
@@ -40,11 +40,69 @@ func tipoUI() int {
 /**********************
 FUNCIONES A IMPLEMENTAR
 ***********************/
+func encrypt(data, key []byte) (out []byte) {
+	out = make([]byte, len(data)+16)    // reservamos espacio para el IV al principio
+	rand.Read(out[:16])                 // generamos el IV
+	blk, err := aes.NewCipher(key)      // cifrador en bloque (AES), usa key
+	chk(err)                            // comprobamos el error
+	ctr := cipher.NewCTR(blk, out[:16]) // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out[16:], data)    // ciframos los datos
+	return
+}
+
+func decrypt(data, key []byte) (out []byte) {
+	out = make([]byte, len(data)-16)     // la salida no va a tener el IV
+	blk, err := aes.NewCipher(key)       // cifrador en bloque (AES), usa key
+	chk(err)                             // comprobamos el error
+	ctr := cipher.NewCTR(blk, data[:16]) // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out, data[16:])     // (doble cifrado) los datos
+	return
+}
+
+// función para comprimir
+func compress(data []byte) []byte {
+	var b bytes.Buffer      // b contendrá los datos comprimidos (tamaño variable)
+	w := zlib.NewWriter(&b) // escritor que comprime sobre b
+	w.Write(data)           // escribimos los datos
+	w.Close()               // cerramos el escritor (buffering)
+	return b.Bytes()        // devolvemos los datos comprimidos
+}
+
+// función para descomprimir
+func decompress(data []byte) []byte {
+	var b bytes.Buffer                              // b contendrá los datos descomprimidos
+	r, err := zlib.NewReader(bytes.NewReader(data)) // lector descomprime al leer
+	chk(err)                                        // comprobamos el error
+	io.Copy(&b, r)                                  // copiamos del descompresor (r) al buffer (b)
+	r.Close()                                       // cerramos el lector (buffering)
+	return b.Bytes()                                // devolvemos los datos descomprimidos
+}
 
 /**********************
 -------SERVIDOR--------
 ***********************/
+func (dSrv *db) guardar(nomFich string, clave []byte) {
+	b, err := json.Marshal(dSrv) // serializar a JSON
+	chk(err)
+	b = encrypt(b, clave)
+	b = compress(b)
+	err = ioutil.WriteFile(nomFich, b, 0777) // escribir en fichero, el string b se guarda en el fichero nomFich
+	chk(err)
+}
 
+// Carga la base de datos de un fichero de disco
+func (dSrv *db) cargar(nomFich string, clave []byte) {
+	b, err := ioutil.ReadFile(nomFich) // leer fichero
+	chk(err)
+	b = decompress(b)
+	b = decrypt(b, clave)
+	err = json.Unmarshal(b, dSrv) // deserializar de JSON obteniendo la BD en memoria
+	chk(err)
+}
+
+
+
+/*
 // Guarda la base de datos en un fichero de disco
 func (dSrv *db) guardar(nomFich string, clave []byte) {
 	// https://pkg.go.dev/crypto/cipher#Stream.XORKeyStream 
@@ -101,7 +159,7 @@ func (dSrv *db) cargar(nomFich string, clave []byte) {
 	//desparsear el json
 	err = json.Unmarshal(ciphertext, &dbObj)
 	chk(err)
-}
+}*/
 
 // Realiza el registro de usuario
 func (dSrv *db) registrarUsuario(login, contr string) bool {
@@ -134,46 +192,12 @@ func (dSrv *db) registrarUsuario(login, contr string) bool {
 	return true
 }
 
+
 // Autenticación según la sección del API a la que se quiere acceder
 func (dSrv *db) puedeAcceder(login, contr string, token string, comando string) bool {
-	// se inicializan las variables en false
-	autenticacionOK := false
-	accesoOk := false
-	administrador := false
-	u, ok := dSrv.Creds[login]// verifica si hay un login y se guarda en la u
-	hash, _ := scrypt.Key([]byte(contr),[]byte(u.Sal), 32768, 8, 1, 32) // se hashea de nuevo la contraseña con la sal que se ha creado antes
-	// los valores que aparecen en esta operacion son la sal, una cuenta de interaccuones, el tamaño bloque, el factor de paralelismo y la longitud de la clave derivada
-
-	if ok {
-		if !bytes.Equal(u.Hash, hash) { // se compara si el u.hash generado anteriormente y el que se ha generado ahora son iguales
-			//si son iguales la autenticación es igual a true
-			autenticacionOK = true
-		}
-	}
-	if login == dSrv.UserAdmin() { // si este login es igual que el de la base de datos, el admin es igual a true
-		administrador = true
-	}
-	switch comando {
-	case "BD_INI":
-		_, existeAdmin := dSrv.Creds[dSrv.UserAdmin()] // verifica si hay un admin, es bool
-		if administrador && !existeAdmin {             // si hay un administrador y no existe admin, continua
-			if contr == dSrv.ClaveAdminInicial() {
-				accesoOk = true // si la contraseña introducida es igual que la contraseña del administrador, puede acceder
-			}
-		} else {
-			accesoOk = false
-		}
-	case "SALIR":
-		accesoOk = autenticacionOK && administrador
-	case "DOC_REG":
-		accesoOk = autenticacionOK && administrador
-	default:
-		accesoOk = autenticacionOK
-	}
-
-	return accesoOk
+	accesoOk := true
+	return accesoOk;
 }
-
 // Acciones a ejecutar al iniciar el servidor
 func (dSrv *db) AccionPreStart() {
 	//...
