@@ -18,7 +18,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 	"golang.org/x/crypto/scrypt"
 	"compress/zlib"
@@ -40,6 +39,8 @@ func tipoUI() int {
 /**********************
 FUNCIONES A IMPLEMENTAR
 ***********************/
+
+// función para cifrar (con AES en este caso), adjunta el IV al principio
 func encrypt(data, key []byte) (out []byte) {
 	out = make([]byte, len(data)+16)    // reservamos espacio para el IV al principio
 	rand.Read(out[:16])                 // generamos el IV
@@ -50,11 +51,15 @@ func encrypt(data, key []byte) (out []byte) {
 	return
 }
 
+// función para descifrar (con AES en este caso)
 func decrypt(data, key []byte) (out []byte) {
 	out = make([]byte, len(data)-16)     // la salida no va a tener el IV
+	// si no le sumo el len de b me da error: "output smaller than input"
 	blk, err := aes.NewCipher(key)       // cifrador en bloque (AES), usa key
 	chk(err)                             // comprobamos el error
 	ctr := cipher.NewCTR(blk, data[:16]) // cifrador en flujo: modo CTR, usa IV
+	// XORKey.. va byte por byte haciendo una operacion XOR con el slice y
+	// los bytes de cifrado de la clave
 	ctr.XORKeyStream(out, data[16:])     // (doble cifrado) los datos
 	return
 }
@@ -100,103 +105,65 @@ func (dSrv *db) cargar(nomFich string, clave []byte) {
 	chk(err)
 }
 
-
-
-/*
-// Guarda la base de datos en un fichero de disco
-func (dSrv *db) guardar(nomFich string, clave []byte) {
-	// https://pkg.go.dev/crypto/cipher#Stream.XORKeyStream 
-	//serializar a JSON
-	b, err := json.Marshal(dSrv)
-	chk(err)
-	//creo el bloque de cifrado y le paso la clave
-	block, err := aes.NewCipher(clave)
-	chk(err)
-	//creo el array de destino, donde va el texto cifrado
-	// si no le sumo el len de b me da error: "output smaller than input"
-	ciphertext := make([]byte, aes.BlockSize+len(b))
-	//obtenemos el primer bloque
-	//se crea el vector de inicializacion (iv) para aumentar la seguridad 
-	//el iv siempre sera del tamaño del bloque
-	iv := ciphertext[:aes.BlockSize]
-	_, err = io.ReadFull(rand.Reader, iv)
-	chk(err)
-	//creo el encirptador que usa el bloque y el iv
-	stream := cipher.NewCFBEncrypter(block, iv)
-	//cifrar el texto menos el primer bloque porque este corresponde al iv
-	// XORKey.. va byte por byte haciendo una operacion XOR con el slice y
-	// los bytes de cifrado de la clave
-	stream.XORKeyStream(ciphertext[aes.BlockSize:], b)
-	chk(err)
-}
-
-// Carga la base de datos de un fichero de disco
-func (dSrv *db) cargar(nomFich string, clave []byte) {
-	ciphertext, err := ioutil.ReadFile(nomFich) // Leer el archivo cifrado
-	chk(err)
-	//crear un nuevo cipher.Block con la clave
-	block, err := aes.NewCipher(clave)
-	chk(err)
-	// si el len del texto cifrado es menor que el tamaño de bloque abortamos
-	if len(ciphertext) < aes.BlockSize {
-		log.Fatal("error")
-	}
-	//se obtiene el iv que son los 16 primeros bytes == tamanyo del bloque
-	iv := ciphertext[:aes.BlockSize]
-	 //eliminamos el IV del texto cifrado ya que lo hemos guardado anteriormente
-	ciphertext = ciphertext[aes.BlockSize:]
-	//hacemos uso del CFBDecrypter para desencriptar con el codigo y el iv
-	stream := cipher.NewCFBDecrypter(block, iv)
-	//descifrar los datos del archivo (excepto el primer bloque)
-	// esta funcion hace XOR byte por byte
-	// la documentacion dice que la funcion XORKey.. puede trabajar con dos 
-	//parametros si se llaman del mismo modo (ciphertext)
-	//"XORKeyStream can work in-place if the two arguments are the same."
-	stream.XORKeyStream(ciphertext, ciphertext)
-	//en este momento tengo el texto descifrado, falta desparsearlo
-	//se crea un objeto de tipo db
-	var dbObj db
-	//desparsear el json
-	err = json.Unmarshal(ciphertext, &dbObj)
-	chk(err)
-}*/
-
 // Realiza el registro de usuario
 func (dSrv *db) registrarUsuario(login, contr string) bool {
-	u, ok := dSrv.Creds[login] // comprobar si existe el usuario
-	if ok { //Si existe, login
-		//https://pkg.go.dev/golang.org/x/crypto/scrypt#Key
-		//ver parametros de la funcion key
-		//generamos la contraseña del usuario pero con su Sal que tenemos almacenado
-		has, e := scrypt.Key([]byte(contr), []byte(u.Sal), 32768, 8, 1, 32) 
-		chk(e)
-		/*
-		Compare returns an integer comparing two strings lexicographically. 
-		The result will be 0 if a == b, -1 if a < b, and +1 if a > b.
-		*/
-		if strings.Compare(string(has), u.Contraseña) != 0 { // Comparar contraseña.
-			//si distinto de 0 devolvemos false entonces la contraseña introducida
-			//no coincide con la guardada hasheada en la bbdd
-			return false
-		}
-	} else { //Si no existe, registro
-		sal := make([]byte, 32) //generamos un array de bytes de tamaño 32
-		_, e := rand.Read(sal)  //generar sal aleatorio
-		chk(e)
-		//contraseña hasheada con el sal
-		has, e := scrypt.Key([]byte(contr), sal, 32768, 8, 1, 32)
-		chk(e)
-		//guardamos en la db login, contra y sal
-		dSrv.Creds[login] = auth{login, string(has), string(sal)} // Añade a la BD.
+	_, ok := dSrv.Creds[login] //comprueba si existe el usuario en la base de datos
+	if ok {
+		return false
+	} else {
+		//se registra el usuario
+		var Hash []byte
+		Sal := make([]byte, 16)                                   // se reserva un espacio de 16 bytes para la sal
+		rand.Read(Sal)                                            // se crea la sal aleatoriamente
+		Hash, _ = scrypt.Key([]byte(contr), Sal, 32768, 8, 1, 32) // se hashea la contraseña con la sal
+		dSrv.Creds[login] = auth{login, Hash, Sal}                // se añade a la base de datos
 	}
 	return true
 }
 
-
 // Autenticación según la sección del API a la que se quiere acceder
 func (dSrv *db) puedeAcceder(login, contr string, token string, comando string) bool {
-	accesoOk := true
-	return accesoOk;
+	equalHashBooleanForAllUsers := false
+	accesoOk := false
+	adminBool := false
+	u, ok := dSrv.Creds[login] // se comprueba el usuario
+	hash, _ := scrypt.Key([]byte(contr), u.Sal,  32768, 8, 1, 32) // se hashea de nuevo la contraseña con la sal que se ha creado antes
+	//cuando se inicie el programa por primera vez no entrara en este if ya que primero se debe 
+	// registrar el administrador
+	if ok {
+		if !bytes.Equal(u.Hash, hash) { // se compara si el u.hash de la bbdd y el que se ha generado ahora son iguales
+			//si son iguales la autenticación es igual a true
+			equalHashBooleanForAllUsers = true
+		}
+	}
+	if login == dSrv.UserAdmin() { 
+		// si este login de admin es igual que el de la base de datos, el admin es igual a true
+		adminBool = true
+	}
+
+	// con el switch se controla el comando enviado por el servidor
+	switch comando {
+		// solo podrá acceder el usuario administrador con la contraseña inicial y si 
+		// aún no se ha registrado ningún usuario administrador.
+		case "BD_INI":
+			_, existeAdmin := dSrv.Creds[dSrv.UserAdmin()] // verifica si hay un admin
+			if adminBool && !existeAdmin {             // si hay un administrador y no se ha registrado admin, continua
+				if contr == dSrv.ClaveAdminInicial() {
+					accesoOk = true // si la contraseña introducida es igual que la contraseña del administrador, puede acceder
+				}
+			} else {
+				accesoOk = false
+			}
+			//solo puede acceder el administrador
+		case "SALIR":
+			accesoOk = equalHashBooleanForAllUsers && adminBool
+		case "DOC_REG":
+			accesoOk = equalHashBooleanForAllUsers && adminBool
+		default://resto de comandos
+			accesoOk = equalHashBooleanForAllUsers
+	}
+
+	return accesoOk
 }
 // Acciones a ejecutar al iniciar el servidor
 func (dSrv *db) AccionPreStart() {
@@ -470,8 +437,8 @@ type historial struct {
 // datos relativos a la autentificación (credenciales)
 type auth struct {
 	Login      string // nombre de entrada e identificador primario de credenciales
-	Contraseña string // contraseña (en claro, se debe modificar...)
-	Sal		   string // sal para anyadir a la contrasenya
+	Sal		   []byte // sal para anyadir a la contrasenya
+	Hash       []byte // hash para anyadir a la contrasenya
 }
 
 // Estos son los datos que almacena el cliente en memoría para trabajar
