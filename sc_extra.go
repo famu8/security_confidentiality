@@ -13,6 +13,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
+	"os"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -39,17 +40,42 @@ func tipoUI() int {
 /**********************
 FUNCIONES A IMPLEMENTAR
 ***********************/
+func guardarIVEnArchivo(filename string, iv []byte) error {
+    // Abrir el archivo para escritura
+    file, err := os.Create(filename)
+    chk(err)
+    defer file.Close()
+    // Escribir los bytes en el archivo
+    _, err = file.Write(iv)
+    if err != nil {
+        return err
+    }
+    return nil
+}
 
 // función para cifrar (con AES en este caso), adjunta el IV al principio
 func encrypt(data, key []byte) (out []byte) {
-	out = make([]byte, len(data)+16)    // reservamos espacio para el IV al principio
-	rand.Read(out[:16])                 // generamos el IV
-	blk, err := aes.NewCipher(key)      // cifrador en bloque (AES), usa key
-	chk(err)                            // comprobamos el error
-	ctr := cipher.NewCTR(blk, out[:16]) // cifrador en flujo: modo CTR, usa IV
-	ctr.XORKeyStream(out[16:], data)    // ciframos los datos
+	filename := "iv.txt"
+	var iv [16]byte
+	// Generar un IV utilizando la función rand
+	_, err := rand.Read(iv[:])
+	chk(err)
+	// Llamar a la función para guardar el IV en el archivo
+	err = guardarIVEnArchivo(filename, iv[:])
+	chk(err)
+	fmt.Println("El IV se ha generado y guardado correctamente en el archivo.")
+	blk, err := aes.NewCipher(key)         // cifrador en bloque (AES), usa key
+	chk(err)                               // comprobamos el error
+	out = make([]byte, 16+len(data))       // inicializamos out con la longitud correcta (IV + datos)
+										   // si no, me da error: "output smaller than input"
+	copy(out[:16], iv[:])                  // copiamos el IV al principio de out
+	ctr := cipher.NewCTR(blk, out[:16])    // cifrador en flujo: modo CTR, usa IV
+	ctr.XORKeyStream(out[16:], data)       // ciframos los datos
+	// XORKey.. va byte por byte haciendo una operacion XOR con el slice y
+	// los bytes de cifrado de la clave
 	return
 }
+
 
 // función para descifrar (con AES en este caso)
 func decrypt(data, key []byte) (out []byte) {
@@ -89,7 +115,7 @@ func decompress(data []byte) []byte {
 func (dSrv *db) guardar(nomFich string, clave []byte) {
 	b, err := json.Marshal(dSrv) // serializar a JSON
 	chk(err)
-	b = encrypt(b, clave)
+	b = encrypt(b, clave) 
 	b = compress(b)
 	err = ioutil.WriteFile(nomFich, b, 0777) // escribir en fichero, el string b se guarda en el fichero nomFich
 	chk(err)
@@ -99,8 +125,8 @@ func (dSrv *db) guardar(nomFich string, clave []byte) {
 func (dSrv *db) cargar(nomFich string, clave []byte) {
 	b, err := ioutil.ReadFile(nomFich) // leer fichero
 	chk(err)
-	b = decompress(b)
-	b = decrypt(b, clave)
+	b = decompress(b) // descomprimir
+	b = decrypt(b, clave) // descifrar
 	err = json.Unmarshal(b, dSrv) // deserializar de JSON obteniendo la BD en memoria
 	chk(err)
 }
@@ -109,10 +135,11 @@ func (dSrv *db) cargar(nomFich string, clave []byte) {
 func (dSrv *db) registrarUsuario(login, contr string) bool {
 	_, ok := dSrv.Creds[login] //comprueba si existe el usuario en la base de datos
 	if ok {
+		// si existe, no se registra
 		return false
 	} else {
 		//se registra el usuario
-		var Hash []byte
+		var Hash []byte                                           // se crea un slice de bytes para el hash
 		Sal := make([]byte, 16)                                   // se reserva un espacio de 16 bytes para la sal
 		rand.Read(Sal)                                            // se crea la sal aleatoriamente
 		Hash, _ = scrypt.Key([]byte(contr), Sal, 32768, 8, 1, 32) // se hashea la contraseña con la sal
@@ -147,7 +174,8 @@ func (dSrv *db) puedeAcceder(login, contr string, token string, comando string) 
 		// aún no se ha registrado ningún usuario administrador.
 		case "BD_INI":
 			_, existeAdmin := dSrv.Creds[dSrv.UserAdmin()] // verifica si hay un admin
-			if adminBool && !existeAdmin {             // si hay un administrador y no se ha registrado admin, continua
+			// si no hay un administrador y no se ha registrado admin, continua
+			if adminBool && !existeAdmin {            
 				if contr == dSrv.ClaveAdminInicial() {
 					accesoOk = true // si la contraseña introducida es igual que la contraseña del administrador, puede acceder
 				}
@@ -162,12 +190,40 @@ func (dSrv *db) puedeAcceder(login, contr string, token string, comando string) 
 		default://resto de comandos
 			accesoOk = equalHashBooleanForAllUsers
 	}
-
 	return accesoOk
 }
+
+
+
+// Variables globales
+var adminPassGlobal string
+var claveMaestraGlobal []byte
+
 // Acciones a ejecutar al iniciar el servidor
 func (dSrv *db) AccionPreStart() {
-	//...
+	/*
+	// crear una clave maestra para poder descifrar todos los datos
+	claveMaestraGlobal = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
+	rand.Read(claveMaestraGlobal)
+
+	local_pass_admin := make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
+	rand.Read(local_pass_admin)
+	adminPassGlobal = base64.StdEncoding.EncodeToString([]byte(local_pass_admin)) // se codifica la clave que se ha creado anteriormente // se codifica la cave que se ha creado anteriormente
+
+	fmt.Printf("La clave inicial es: " + adminPassGlobal + " ") // se muestra la contraseña por terminal
+	fmt.Printf("")
+	global_pass_maestra, err := os.ReadFile("fichero.txt") // si existe este fichero se lee de aqui
+
+	if err != nil {
+		_, err := os.Create("fichero.txt") // cuando no existe ningun fichero se crea uno
+		chk(err)
+
+		global_pass_maestra = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
+		rand.Read(global_pass_maestra)
+
+		err2 := ioutil.WriteFile("fichero.txt", global_pass_maestra, 0777) // se hashea esta clave
+		chk(err2)
+	}*/
 }
 
 // Acciones a ejecutar antes de realizar un comando
