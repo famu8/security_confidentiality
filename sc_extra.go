@@ -22,6 +22,9 @@ import (
 	"time"
 	"golang.org/x/crypto/scrypt"
 	"compress/zlib"
+	"encoding/base64"
+	"crypto/sha256"
+	"bufio"
 )
 
 /************************
@@ -201,7 +204,6 @@ var claveMaestraGlobal []byte
 
 // Acciones a ejecutar al iniciar el servidor
 func (dSrv *db) AccionPreStart() {
-	/*
 	// crear una clave maestra para poder descifrar todos los datos
 	claveMaestraGlobal = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
 	rand.Read(claveMaestraGlobal)
@@ -223,7 +225,7 @@ func (dSrv *db) AccionPreStart() {
 
 		err2 := ioutil.WriteFile("fichero.txt", global_pass_maestra, 0777) // se hashea esta clave
 		chk(err2)
-	}*/
+	}
 }
 
 // Acciones a ejecutar antes de realizar un comando
@@ -248,7 +250,30 @@ func (dSrv *db) AccionPreStop() {
 
 // Obtener clave maestra para el cifrado (tamaño de 32 bytes -> 256bits)
 func (dSrv *db) ClaveMaestra() []byte {
-	return []byte("---Esto es una clave fija---    ")
+		//return []byte("-Esto es una clave fija-")
+		var text string
+		for {
+			fmt.Print("\nIntroduzca la contraseña: ")
+			// Leer entrada de teclado
+			reader := bufio.NewReader(os.Stdin)
+			input, err := reader.ReadString('\n')
+			chk(err)
+			// Quitar salto de linea
+			if len(input) > 0 {
+				text = input
+				break
+			} else {
+				fmt.Println("Entrada inválida")
+			}
+		}
+		// Obtener hash de la clave
+		h := sha256.New()
+		// Escribir clave en el hash
+		h.Write([]byte(text))
+		// Obtener hash en bytes
+		btext := h.Sum(nil)
+		// Devolver solo los 32 primeros bytes
+		return btext[:32]
 }
 
 // Obtener clave admin para login
