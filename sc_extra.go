@@ -36,8 +36,7 @@ CONFIGURACION PRÁCTICA
 // 1: Linea de comandos
 // 2: Interfaz gráfica
 func tipoUI() int {
-	return 0
-	//aqui hacer un swicth para implementar el tipo de operacion que el usuario quisiera realizar
+	return 1
 }
 
 /**********************
@@ -278,7 +277,7 @@ func (dSrv *db) ClaveMaestra() []byte {
 
 // Obtener clave admin para login
 func (dSrv *db) ClaveAdminInicial() string {
-	return "soy la clave inicial de admin"
+	return adminPassGlobal
 }
 
 // Obtener nombre usuario admin para login
@@ -297,7 +296,7 @@ func (dSrv *db) GetUserToken(usr string) string {
 
 // Obtener clave admin para login en servidor
 func (dCli *dataCliente) ClaveAdminInicial() string {
-	return "soy la clave inicial de admin"
+	return adminPassGlobal
 }
 
 // Devuelve el usuario actual para login en servidor
@@ -345,52 +344,86 @@ func cmdIniIUI(cli *http.Client) {
 
 	var accion, accion2 int
 
-	//Bucle del menú inicial
+	//Bucle del menú 1
 	for {
 		accion = accionMenuInicial()
-		fmt.Println("Has elegido:" + fmt.Sprint(accion))
+		fmt.Println("Has seleccionado:" + fmt.Sprint(accion))
 		fmt.Println("")
-		if accion == 0 {
+		if accion == 0 { // si se selecciona salir, se cierra la aplicacion
+			fmt.Println("Aplicación Cerrada")
 			break
 		}
 		switch accion {
 		case 1:
-			var usr, pass string
+			var usr, pass string // se inicializan las variables usuario y contraseña
 
 			fmt.Println("Usuario:")
 			fmt.Scanln(&usr)
 			fmt.Println("Contraseña:")
 			fmt.Scanln(&pass)
-
-			//iniciar sesión con cmdLogin(cli, usr, pass)
 			fmt.Println("Iniciando sesión con '" + usr + "' y  contraseña '" + pass + "'")
+			clienteData = dataCliente{
+				usrActual:   usr,
+				tokenActual: "",
+				passActual:  pass,
+			}
 
-			//Crear estrucutra de datos de incio de sesión del cliente
-			// clienteData = dataCliente{
-			// 	usrActual:   "",
-			// 	passActual: "",
-			// 	tokenActual: "",
-			// }
-
-			//Bucle del menú principal
-			for {
-				accion2 = accionMenuSecundario()
-				fmt.Println("Has elegido:" + fmt.Sprint(accion2))
+			for { // si la contraseña es correcta se inicializa el for
+				accion2 = accionMenuSecundario() // se abre el menu 2
+				fmt.Println("Has seleccionado:" + fmt.Sprint(accion2))
 				fmt.Println("")
 				if accion2 == 0 {
 					break
 				}
 				switch accion2 {
 				case 1:
-					fmt.Println("-----------")
-					fmt.Println("|   HOLA   |")
-					fmt.Println("-----------")
-					fmt.Println("")
+					cmdBDIni(cli)
 				case 2:
-					fmt.Println("-----------")
-					fmt.Println("|   ADIOS  |")
-					fmt.Println("-----------")
-					fmt.Println("")
+					cmdBDImp(cli)
+				case 3:
+					var idPac, idMed, observaciones string
+					fmt.Println("Id Paciente:")
+					fmt.Scanln(&idPac)
+					fmt.Println("Id Medico:")
+					fmt.Scanln(&idMed)
+					fmt.Println("Observaciones:")
+					fmt.Scanln(&observaciones)
+					cmdHistReg(cli, idPac, idMed, observaciones)
+					cmdBDGrabar(cli, "datos.db")
+
+				case 4:
+					var id, nombre, apellidos, especialidad, us, contra string
+					fmt.Println("Id:")
+					fmt.Scanln(&id)
+					fmt.Println("Nombre:")
+					fmt.Scanln(&nombre)
+					fmt.Println("Apellidos:")
+					fmt.Scanln(&apellidos)
+					fmt.Println("Especialidad:")
+					fmt.Scanln(&especialidad)
+					fmt.Println("Usuario:")
+					fmt.Scanln(&us)
+					fmt.Println("Contraseña:")
+					fmt.Scanln(&contra)
+					fmt.Println("Registrando al medico'" + nombre + "''" + apellidos + "'")
+					cmdDocReg(cli, id, nombre, apellidos, especialidad, us, contra)
+					cmdBDGrabar(cli, "datos.db")
+				case 5:
+					var id, nombre, apellidos, fecha, genero string
+					fmt.Println("Id:")
+					fmt.Scanln(&id)
+					fmt.Println("Nombre:")
+					fmt.Scanln(&nombre)
+					fmt.Println("Apellidos:")
+					fmt.Scanln(&apellidos)
+					fmt.Println("Fecha de Nacimiento:")
+					fmt.Scanln(&fecha)
+					fmt.Println("Hombre o Mujer (M/H):")
+					fmt.Scanln(&genero)
+					cmdPacReg(cli, id, nombre, apellidos, fecha, genero)
+					cmdBDGrabar(cli, "datos.db")
+				case 6:
+					cmdSalir(cli)
 				}
 			}
 		}
@@ -416,13 +449,16 @@ func accionMenuInicial() int {
 
 func accionMenuSecundario() int {
 	fmt.Println("")
-	fmt.Println("---------------****---------------")
-	fmt.Println("Acciones:")
-	fmt.Println("1) Dí 'HOLA'")
-	fmt.Println("2) Dí 'ADIOS'")
+	fmt.Println("MENÚ PRINCIPAL")
+	fmt.Println("")
+	fmt.Println("1) Iniciar base de datos")
+	fmt.Println("2) Imprimir la base de datos")
+	fmt.Println("3) Añadir historial")
+	fmt.Println("4) Registrar doctor")
+	fmt.Println("5) Añadir paciente")
+	fmt.Println("6) Salir")
 	fmt.Println("0) Volver")
-	fmt.Println("----------------------------------")
-	fmt.Println("¿Qué deseas hacer? (0,1,2)")
+	fmt.Println("Seleccione una opción (0,1,2,3,4,5,6,7)")
 
 	var opcion int
 	fmt.Scanln(&opcion)
