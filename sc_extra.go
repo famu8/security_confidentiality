@@ -23,8 +23,6 @@ import (
 	"golang.org/x/crypto/scrypt"
 	"compress/zlib"
 	"encoding/base64"
-	"crypto/sha256"
-	"bufio"
 )
 
 /************************
@@ -207,22 +205,25 @@ func (dSrv *db) AccionPreStart() {
 	claveMaestraGlobal = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
 	rand.Read(claveMaestraGlobal)
 
-	local_pass_admin := make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
-	rand.Read(local_pass_admin)
-	adminPassGlobal = base64.StdEncoding.EncodeToString([]byte(local_pass_admin)) // se codifica la clave que se ha creado anteriormente // se codifica la cave que se ha creado anteriormente
-
+	passAdminLocal := make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
+	rand.Read(passAdminLocal)
+	adminPassGlobal = base64.StdEncoding.EncodeToString([]byte(passAdminLocal)) // se codifica la clave que se ha creado anteriormente 
+	// se codifica la clave que se ha creado anteriormente
 	fmt.Printf("La clave inicial es: " + adminPassGlobal + " ") // se muestra la contraseña por terminal
 	fmt.Printf("")
-	global_pass_maestra, err := os.ReadFile("fichero.txt") // si existe este fichero se lee de aqui
+
+	// se crea un fichero para guardar la clave maestra
+	// si existe este fichero se lee de aqui
+	maestraPassGlobal, err := os.ReadFile("maestra.txt") // si existe este fichero se lee de aqui
 
 	if err != nil {
-		_, err := os.Create("fichero.txt") // cuando no existe ningun fichero se crea uno
+		_, err := os.Create("maestra.txt") // cuando no existe ningun fichero se crea uno
 		chk(err)
 
-		global_pass_maestra = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
-		rand.Read(global_pass_maestra)
+		maestraPassGlobal = make([]byte, 32) // se reserva un espacio de 32 bytes y se rellena con valores aleatorios
+		rand.Read(maestraPassGlobal)
 
-		err2 := ioutil.WriteFile("fichero.txt", global_pass_maestra, 0777) // se hashea esta clave
+		err2 := ioutil.WriteFile("maestra.txt", maestraPassGlobal, 0777) // se hashea esta clave
 		chk(err2)
 	}
 }
@@ -249,30 +250,7 @@ func (dSrv *db) AccionPreStop() {
 
 // Obtener clave maestra para el cifrado (tamaño de 32 bytes -> 256bits)
 func (dSrv *db) ClaveMaestra() []byte {
-		//return []byte("-Esto es una clave fija-")
-		var text string
-		for {
-			fmt.Print("\nIntroduzca la contraseña: ")
-			// Leer entrada de teclado
-			reader := bufio.NewReader(os.Stdin)
-			input, err := reader.ReadString('\n')
-			chk(err)
-			// Quitar salto de linea
-			if len(input) > 0 {
-				text = input
-				break
-			} else {
-				fmt.Println("Entrada inválida")
-			}
-		}
-		// Obtener hash de la clave
-		h := sha256.New()
-		// Escribir clave en el hash
-		h.Write([]byte(text))
-		// Obtener hash en bytes
-		btext := h.Sum(nil)
-		// Devolver solo los 32 primeros bytes
-		return btext[:32]
+	return claveMaestraGlobal
 }
 
 // Obtener clave admin para login
@@ -343,15 +321,13 @@ func cmdIniIUI(cli *http.Client) {
 	fmt.Println("¡Bienvenido a mi programa!")
 
 	var accion, accion2 int
-
-	//Bucle del menú 1
 	for {
 		accion = accionMenuInicial()
 		fmt.Println("Has seleccionado:" + fmt.Sprint(accion))
 		fmt.Println("")
 		if accion == 0 { // si se selecciona salir, se cierra la aplicacion
 			fmt.Println("Aplicación Cerrada")
-			break
+			os.Exit(0)
 		}
 		switch accion {
 		case 1:
@@ -373,6 +349,7 @@ func cmdIniIUI(cli *http.Client) {
 				fmt.Println("Has seleccionado:" + fmt.Sprint(accion2))
 				fmt.Println("")
 				if accion2 == 0 {
+					// si se selecciona salir, se cierra la aplicacion
 					break
 				}
 				switch accion2 {
@@ -428,12 +405,11 @@ func cmdIniIUI(cli *http.Client) {
 			}
 		}
 	}
-
-	cmdSalir(cli)
 }
 
 func accionMenuInicial() int {
-	fmt.Println("")
+	fmt.Println("PROGRAMA DE GESTIÓN DE HISTORIALES MÉDICOS")
+	fmt.Println("Hecho por: Fernando Marina Urriola")
 	fmt.Println("---------------****---------------")
 	fmt.Println("Acciones:")
 	fmt.Println("1) Login")
@@ -458,7 +434,6 @@ func accionMenuSecundario() int {
 	fmt.Println("5) Añadir paciente")
 	fmt.Println("6) Salir")
 	fmt.Println("0) Volver")
-	fmt.Println("Seleccione una opción (0,1,2,3,4,5,6,7)")
 
 	var opcion int
 	fmt.Scanln(&opcion)
