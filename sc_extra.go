@@ -1,9 +1,10 @@
 /*
 Práctica SC 22/23
 
-# Funcionalidad a implementar
+# Funcionalidades a implementar
 
 Estudiante: FERNANDO AUGUSTO MARINA URRIOLA
+
 */
 package main
 
@@ -209,8 +210,7 @@ func (dSrv *db) AccionPreStart() {
 	rand.Read(passAdminLocal)
 	adminPassGlobal = base64.StdEncoding.EncodeToString([]byte(passAdminLocal)) // se codifica la clave que se ha creado anteriormente 
 	// se codifica la clave que se ha creado anteriormente
-	fmt.Printf("La clave inicial es: " + adminPassGlobal + " ") // se muestra la contraseña por terminal
-	fmt.Printf("")
+	fmt.Println("La clave inicial es: " + adminPassGlobal+"\n" ) // se muestra la contraseña por terminal
 
 	// se crea un fichero para guardar la clave maestra
 	// si existe este fichero se lee de aqui
@@ -355,6 +355,7 @@ func cmdIniIUI(cli *http.Client) {
 				switch accion2 {
 				case 1:
 					cmdBDIni(cli)
+					// se inicializa la base de datos y debo guardarla
 				case 2:
 					cmdBDImp(cli)
 				case 3:
@@ -410,7 +411,7 @@ func cmdIniIUI(cli *http.Client) {
 func accionMenuInicial() int {
 	fmt.Println("PROGRAMA DE GESTIÓN DE HISTORIALES MÉDICOS")
 	fmt.Println("Hecho por: Fernando Marina Urriola")
-	fmt.Println("---------------****---------------")
+	fmt.Println("----------------------------------")
 	fmt.Println("Acciones:")
 	fmt.Println("1) Login")
 	fmt.Println("0) Salir")
@@ -445,46 +446,7 @@ func accionMenuSecundario() int {
 // Recuerda descargar el módulo de go con:
 // go get github.com/zserge/lorca
 func cmdIniGUI(cli *http.Client) {
-	/*
-		args := []string{}
-		if runtime.GOOS == "linux" {
-			args = append(args, "--class=Lorca")
-		}
-		ui, err := lorca.New("", "", 480, 320, args...)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer ui.Close()
 
-		// A simple way to know when UI is ready (uses body.onload event in JS)
-		ui.Bind("start", func() {
-			log.Println("UI is ready")
-		})
-
-		// Load HTML.
-		b, err := ioutil.ReadFile("./www/index.html") // just pass the file name
-		if err != nil {
-			fmt.Print(err)
-		}
-		html := string(b) // convert content to a 'string'
-		ui.Load("data:text/html," + url.PathEscape(html))
-
-		// You may use console.log to debug your JS code, it will be printed via
-		// log.Println(). Also exceptions are printed in a similar manner.
-		ui.Eval(`
-			console.log("Hello, world!");
-		`)
-
-		// Wait until the interrupt signal arrives or browser window is closed
-		sigc := make(chan os.Signal)
-		signal.Notify(sigc, os.Interrupt)
-		select {
-		case <-sigc:
-		case <-ui.Done():
-		}
-
-		log.Println("exiting...")
-	*/
 }
 
 /******
